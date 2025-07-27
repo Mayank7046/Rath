@@ -1,0 +1,441 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ride Booking</title>
+    <!-- Tailwind CSS for styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Google Fonts: Inter -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Leaflet.js for Map -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+    <!-- Custom Styles -->
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        #map {
+            height: 100%;
+            width: 100%;
+            z-index: 10;
+        }
+        .transition-all {
+            transition: all 0.3s ease-in-out;
+        }
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 6px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: #f1f1f1;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: #888;
+            border-radius: 3px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+            background: #555;
+        }
+        .suggestion-btn {
+            animation: fadeIn 0.5s ease-in-out;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(-10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        
+        /* Sliding panel styles for mobile */
+        @media (max-width: 1023px) {
+            #bookingPanel {
+                position: fixed;
+                bottom: 0;
+                left: 0;
+                right: 0;
+                z-index: 20;
+                height: 85%; /* Take up most of the screen when open */
+                transform: translateY(0);
+            }
+            #bookingPanel.panel-closed {
+                /* Peek state: shows the top 8rem of the panel */
+                transform: translateY(calc(100% - 8rem));
+            }
+        }
+    </style>
+</head>
+<body class="bg-gray-100 flex flex-col lg:flex-row h-screen overflow-hidden">
+
+    <!-- Map Section -->
+    <div class="w-full h-full lg:w-3/5">
+        <div id="map"></div>
+    </div>
+
+    <!-- Booking Panel -->
+    <div id="bookingPanel" class="panel-closed w-full lg:w-2/5 bg-white shadow-2xl flex flex-col transition-transform duration-500 ease-in-out">
+        
+        <!-- Panel Handle (for mobile) -->
+        <div id="panelHandle" class="lg:hidden w-full py-4 flex-shrink-0 flex items-center justify-center cursor-pointer bg-gray-100 rounded-t-xl border-b">
+            <div class="w-12 h-1.5 bg-gray-400 rounded-full"></div>
+        </div>
+
+        <!-- Scrollable Content -->
+        <div class="flex-grow overflow-y-auto custom-scrollbar">
+            <div class="p-6 lg:p-8">
+                <!-- Step 1: Ride Details -->
+                <div id="rideDetailsStep">
+                    <h1 class="text-3xl font-bold text-gray-800">Book Your Ride</h1>
+                    <p class="text-gray-500 mt-2">Enter your destination to see ride options and prices.</p>
+
+                    <div class="mt-8 space-y-4">
+                        <!-- Pickup Location -->
+                        <div>
+                            <label for="pickup" class="text-sm font-medium text-gray-700">Pickup Location</label>
+                            <div class="relative mt-1">
+                                <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                    <svg class="w-5 h-5 text-gray-400" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M5.05 4.05a7 7 0 119.9 9.9L10 18.9l-4.95-4.95a7 7 0 010-9.9zM10 11a2 2 0 100-4 2 2 0 000 4z" clip-rule="evenodd"></path></svg>
+                                </div>
+                                <input type="text" id="pickup" class="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all" placeholder="Enter pickup location" value="New Delhi, India">
+                            </div>
+                        </div>
+                        <!-- Drop-off Location -->
+                        <div>
+                            <label for="dropoff" class="text-sm font-medium text-gray-700">Drop-off Location</label>
+                            <div class="relative mt-1">
+                                <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                    <svg class="w-5 h-5 text-gray-400" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M5.05 4.05a7 7 0 119.9 9.9L10 18.9l-4.95-4.95a7 7 0 010-9.9zM10 11a2 2 0 100-4 2 2 0 000 4z" clip-rule="evenodd"></path></svg>
+                                </div>
+                                <input type="text" id="dropoff" class="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all" placeholder="Enter drop-off location">
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Gemini Suggestion Button -->
+                    <div class="mt-4">
+                         <button id="suggestDropoffBtn" class="w-full bg-gray-200 text-gray-700 font-semibold py-2 px-4 rounded-lg hover:bg-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-400 transition-all flex items-center justify-center">
+                            ✨ Suggest popular drop-offs
+                        </button>
+                    </div>
+                    <div id="suggestionsContainer" class="mt-4 space-y-2"></div>
+
+                    <!-- Ride Options -->
+                    <div id="rideOptions" class="mt-8 hidden">
+                        <h2 class="text-xl font-semibold text-gray-800">Choose a ride</h2>
+                        <div id="rideList" class="space-y-3 mt-4">
+                            <!-- Ride options will be dynamically inserted here -->
+                        </div>
+                    </div>
+
+                    <!-- Booking Button -->
+                    <div class="mt-8">
+                        <button id="confirmBookingBtn" class="w-full bg-indigo-600 text-white font-bold py-4 rounded-lg hover:bg-indigo-700 focus:outline-none focus:ring-4 focus:ring-indigo-500 focus:ring-opacity-50 transition-all disabled:bg-gray-400 disabled:cursor-not-allowed">
+                            Confirm Ride
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Step 2: Confirmation -->
+                <div id="confirmationStep" class="hidden text-center flex-grow flex flex-col items-center justify-center">
+                    <div id="loader" class="mb-4">
+                        <svg class="animate-spin h-12 w-12 text-indigo-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                    </div>
+                    <h2 id="confirmationTitle" class="text-2xl font-bold text-gray-800">Finding your ride...</h2>
+                    <p id="confirmationSubtitle" class="text-gray-500 mt-2">Please wait while we connect you with a nearby driver.</p>
+                    
+                    <div id="driverDetails" class="hidden mt-8 w-full bg-gray-50 p-6 rounded-lg text-left">
+                        <h3 class="text-lg font-semibold border-b pb-2 mb-4">Driver Details</h3>
+                        <div class="flex items-center">
+                            <img src="https://placehold.co/64x64/E2E8F0/4A5568?text=Driver" class="rounded-full mr-4" id="driverImage">
+                            <div>
+                                <p id="driverName" class="font-bold text-gray-800">John Doe</p>
+                                <p id="driverRating" class="text-sm text-gray-600">⭐ 4.9</p>
+                            </div>
+                        </div>
+                        <div class="mt-4 space-y-2">
+                            <p class="text-gray-700"><span class="font-semibold">Vehicle:</span> <span id="vehicleDetails">Toyota Camry - White</span></p>
+                            <p class="text-gray-700"><span class="font-semibold">License Plate:</span> <span id="licensePlate">ABC-1234</span></p>
+                        </div>
+                        <div id="rideDescriptionContainer" class="mt-4 hidden">
+                             <p id="rideDescription" class="text-sm text-gray-600 bg-indigo-50 p-3 rounded-lg"></p>
+                        </div>
+                         <button id="describeRideBtn" class="w-full mt-6 bg-purple-500 text-white font-bold py-3 rounded-lg hover:bg-purple-600 transition-all">
+                            ✨ Describe my ride
+                        </button>
+                         <button id="cancelRideBtn" class="w-full mt-2 bg-red-500 text-white font-bold py-3 rounded-lg hover:bg-red-600 transition-all">
+                            Cancel Ride
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Leaflet.js script moved here to ensure it loads before our script -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+    <script>
+        // --- DOM Elements ---
+        const pickupInput = document.getElementById('pickup');
+        const dropoffInput = document.getElementById('dropoff');
+        const suggestDropoffBtn = document.getElementById('suggestDropoffBtn');
+        const suggestionsContainer = document.getElementById('suggestionsContainer');
+        const rideOptionsContainer = document.getElementById('rideOptions');
+        const rideList = document.getElementById('rideList');
+        const confirmBookingBtn = document.getElementById('confirmBookingBtn');
+        const rideDetailsStep = document.getElementById('rideDetailsStep');
+        const confirmationStep = document.getElementById('confirmationStep');
+        const loader = document.getElementById('loader');
+        const confirmationTitle = document.getElementById('confirmationTitle');
+        const confirmationSubtitle = document.getElementById('confirmationSubtitle');
+        const driverDetails = document.getElementById('driverDetails');
+        const cancelRideBtn = document.getElementById('cancelRideBtn');
+        const describeRideBtn = document.getElementById('describeRideBtn');
+        const rideDescriptionContainer = document.getElementById('rideDescriptionContainer');
+        const rideDescription = document.getElementById('rideDescription');
+        const vehicleDetailsSpan = document.getElementById('vehicleDetails');
+        const panelHandle = document.getElementById('panelHandle');
+        const bookingPanel = document.getElementById('bookingPanel');
+
+        // --- Map State ---
+        let map;
+        let userMarker;
+        let riderMarkers = [];
+        let routePolyline;
+        const userLocation = [28.6139, 77.2090]; // Simulated: New Delhi
+        const destinationLocation = [27.1767, 78.0081]; // Simulated: Agra (Taj Mahal)
+        const indiaCenter = [20.5937, 78.9629]; // Center of India for initial view
+
+        // --- App State ---
+        let selectedRide = null;
+        let ridePrice = 0;
+
+        // --- Mock Data ---
+        const rideTypes = [
+            { id: 'eco', name: 'Economy', icon: '🚖', multiplier: 1.0, eta: 5 },
+            { id: 'prem', name: 'Premium', icon: '🚘', multiplier: 1.5, eta: 7 },
+            { id: 'suv', name: 'SUV', icon: '🚙', multiplier: 2.0, eta: 6 }
+        ];
+        
+        // --- Gemini API Function ---
+        const callGeminiAPI = async (prompt, isJson = false) => {
+            const apiKey = ""; // Leave empty, handled by environment
+            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+            const payload = { contents: [{ role: "user", parts: [{ text: prompt }] }] };
+            if (isJson) { payload.generationConfig = { responseMimeType: "application/json" }; }
+            try {
+                const response = await fetch(apiUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                if (!response.ok) throw new Error(`API call failed with status: ${response.status}`);
+                const result = await response.json();
+                if (result.candidates?.[0]?.content?.parts?.[0]) {
+                    return result.candidates[0].content.parts[0].text;
+                } else {
+                    console.error("Unexpected API response structure:", result);
+                    return null;
+                }
+            } catch (error) {
+                console.error("Error calling Gemini API:", error);
+                return null;
+            }
+        };
+
+        // --- Map Functions ---
+        function initializeMap() {
+            map = L.map('map').setView(indiaCenter, 5);
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+            }).addTo(map);
+            userMarker = L.marker(userLocation).addTo(map)
+                .bindPopup('<b>Your Location</b><br>New Delhi, India.')
+                .openPopup();
+            const riderIcon = L.icon({
+                iconUrl: 'https://placehold.co/32x32/3B82F6/FFFFFF?text=🚘',
+                iconSize: [32, 32],
+                iconAnchor: [16, 16],
+            });
+            const initialRiderPositions = [[28.6200, 77.2200], [28.6000, 77.2300], [28.6300, 77.1900]];
+            initialRiderPositions.forEach(pos => {
+                const riderMarker = L.marker(pos, { icon: riderIcon }).addTo(map).bindPopup('Available Rider');
+                riderMarkers.push(riderMarker);
+            });
+            setInterval(moveRiders, 3000);
+        }
+
+        function moveRiders() {
+            riderMarkers.forEach(marker => {
+                const lat = marker.getLatLng().lat + (Math.random() - 0.5) * 0.005;
+                const lng = marker.getLatLng().lng + (Math.random() - 0.5) * 0.005;
+                marker.setLatLng([lat, lng]);
+            });
+        }
+
+        function drawRoute() {
+            if (routePolyline) map.removeLayer(routePolyline);
+            const latlngs = [userLocation, destinationLocation];
+            routePolyline = L.polyline(latlngs, {color: 'blue'}).addTo(map);
+            map.fitBounds(routePolyline.getBounds().pad(0.2));
+        }
+        
+        function clearRoute() {
+            if (routePolyline) map.removeLayer(routePolyline);
+            routePolyline = null;
+            map.setView(indiaCenter, 5);
+        }
+
+        // --- Core App Functions ---
+        function calculatePrice(multiplier) {
+            const baseFare = 50;
+            const distance = 200;
+            const pricePerKm = 12;
+            return Math.round(baseFare + (distance * pricePerKm * multiplier));
+        }
+
+        function renderRideOptions() {
+            rideList.innerHTML = '';
+            rideTypes.forEach(ride => {
+                const price = calculatePrice(ride.multiplier);
+                const rideElement = document.createElement('div');
+                rideElement.className = 'flex items-center p-4 border border-gray-200 rounded-lg cursor-pointer hover:bg-gray-50 hover:border-indigo-500 transition-all';
+                rideElement.dataset.rideId = ride.id;
+                rideElement.dataset.ridePrice = price;
+                rideElement.innerHTML = `<div class="text-3xl mr-4">${ride.icon}</div><div class="flex-grow"><p class="font-semibold text-gray-800">${ride.name}</p><p class="text-sm text-gray-500">~${ride.eta} min away</p></div><div class="text-lg font-bold text-gray-900">₹${price}</div>`;
+                rideElement.addEventListener('click', () => selectRide(ride.id, price, rideElement));
+                rideList.appendChild(rideElement);
+            });
+            rideOptionsContainer.classList.remove('hidden');
+        }
+
+        function selectRide(rideId, price, element) {
+            selectedRide = rideTypes.find(r => r.id === rideId);
+            ridePrice = price;
+            document.querySelectorAll('#rideList > div').forEach(el => el.classList.remove('border-indigo-500', 'ring-2', 'ring-indigo-500'));
+            element.classList.add('border-indigo-500', 'ring-2', 'ring-indigo-500');
+            updateBookingButton();
+        }
+        
+        function updateBookingButton() {
+            const isDropoffEntered = dropoffInput.value.trim() !== '';
+            if (isDropoffEntered && selectedRide) {
+                confirmBookingBtn.disabled = false;
+                confirmBookingBtn.textContent = `Confirm Ride - ₹${ridePrice}`;
+            } else {
+                confirmBookingBtn.disabled = true;
+                confirmBookingBtn.textContent = 'Confirm Ride';
+            }
+        }
+
+        function resetFlow() {
+            selectedRide = null;
+            ridePrice = 0;
+            dropoffInput.value = '';
+            rideOptionsContainer.classList.add('hidden');
+            rideList.innerHTML = '';
+            suggestionsContainer.innerHTML = '';
+            updateBookingButton();
+            confirmationStep.classList.add('hidden');
+            rideDetailsStep.classList.remove('hidden');
+            loader.classList.remove('hidden');
+            driverDetails.classList.add('hidden');
+            confirmationTitle.textContent = 'Finding your ride...';
+            confirmationSubtitle.textContent = 'Please wait while we connect you with a nearby driver.';
+            rideDescriptionContainer.classList.add('hidden');
+            rideDescription.textContent = '';
+            clearRoute();
+        }
+
+        // --- Event Listeners ---
+        panelHandle.addEventListener('click', () => {
+            bookingPanel.classList.toggle('panel-closed');
+        });
+
+        dropoffInput.addEventListener('input', () => {
+            if (dropoffInput.value.trim() !== '') renderRideOptions();
+            else {
+                rideOptionsContainer.classList.add('hidden');
+                selectedRide = null;
+            }
+            updateBookingButton();
+        });
+
+        suggestDropoffBtn.addEventListener('click', async () => {
+            suggestDropoffBtn.disabled = true;
+            suggestDropoffBtn.innerHTML = '<svg class="animate-spin h-5 w-5 mr-3" viewBox="0 0 24 24">...</svg> Thinking...';
+            const prompt = `List 5 popular places to visit in Delhi, India, like tourist spots, famous restaurants, or shopping areas. Provide the response as a JSON array of strings. For example: ["Place 1", "Place 2"]`;
+            const responseText = await callGeminiAPI(prompt, true);
+            suggestionsContainer.innerHTML = '';
+            if (responseText) {
+                try {
+                    const suggestions = JSON.parse(responseText);
+                    if (Array.isArray(suggestions)) {
+                        suggestions.forEach(place => {
+                            const btn = document.createElement('button');
+                            btn.textContent = place;
+                            btn.className = 'suggestion-btn w-full text-left p-2 bg-gray-100 rounded-md hover:bg-indigo-100 text-gray-700';
+                            btn.onclick = () => {
+                                dropoffInput.value = place;
+                                dropoffInput.dispatchEvent(new Event('input'));
+                                suggestionsContainer.innerHTML = '';
+                            };
+                            suggestionsContainer.appendChild(btn);
+                        });
+                    }
+                } catch (e) {
+                    console.error("Failed to parse suggestions:", e);
+                    suggestionsContainer.textContent = 'Could not get suggestions.';
+                }
+            } else {
+                suggestionsContainer.textContent = 'Could not get suggestions.';
+            }
+            suggestDropoffBtn.disabled = false;
+            suggestDropoffBtn.innerHTML = '✨ Suggest popular drop-offs';
+        });
+
+        confirmBookingBtn.addEventListener('click', () => {
+            if (confirmBookingBtn.disabled) return;
+            rideDetailsStep.classList.add('hidden');
+            confirmationStep.classList.remove('hidden');
+            drawRoute();
+            setTimeout(() => {
+                loader.classList.add('hidden');
+                confirmationTitle.textContent = 'Driver Found!';
+                confirmationSubtitle.textContent = 'Your driver is on the way.';
+                driverDetails.classList.remove('hidden');
+            }, 2500);
+        });
+        
+        describeRideBtn.addEventListener('click', async () => {
+            describeRideBtn.disabled = true;
+            describeRideBtn.innerHTML = '<svg class="animate-spin h-5 w-5 mr-3" viewBox="0 0 24 24">...</svg> Describing...';
+            const vehicle = vehicleDetailsSpan.textContent;
+            const destination = dropoffInput.value;
+            const rideType = selectedRide ? selectedRide.name : 'ride';
+            const prompt = `Create a short, fun, and slightly dramatic description for my upcoming ${rideType} ride. I'm going to "${destination}" in a ${vehicle}. Make it sound like an exciting mini-adventure.`;
+            const description = await callGeminiAPI(prompt);
+            if (description) {
+                rideDescription.textContent = description;
+                rideDescriptionContainer.classList.remove('hidden');
+            } else {
+                rideDescription.textContent = "Couldn't generate a description at this time.";
+                rideDescriptionContainer.classList.remove('hidden');
+            }
+            describeRideBtn.disabled = false;
+            describeRideBtn.innerHTML = '✨ Describe my ride';
+        });
+
+        cancelRideBtn.addEventListener('click', () => {
+            resetFlow();
+        });
+
+        // --- Initial Setup ---
+        window.addEventListener('load', () => {
+            initializeMap();
+            updateBookingButton();
+        });
+    </script>
+</body>
+</html>
